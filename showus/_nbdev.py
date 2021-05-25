@@ -16,13 +16,14 @@ index = {"Path.ls": "showus.ipynb",
          "load_ner_datasets": "showus.ipynb",
          "create_tokenizer": "showus.ipynb",
          "tokenize_and_align_labels": "showus.ipynb",
+         "jaccard_similarity": "showus.ipynb",
          "compute_metrics": "showus.ipynb",
+         "get_ner_inference_data": "showus.ipynb",
+         "ner_predict": "showus.ipynb",
+         "get_bert_dataset_labels": "showus.ipynb",
+         "filter_bert_labels": "showus.ipynb",
          "create_knowledge_bank": "showus.ipynb",
          "literal_match": "showus.ipynb",
-         "get_ner_inference_data": "showus.ipynb",
-         "get_bert_dataset_labels": "showus.ipynb",
-         "jaccard_similarity": "showus.ipynb",
-         "filter_bert_labels": "showus.ipynb",
          "combine_matching_and_bert": "showus.ipynb"}
 
 modules = ["showus.py"]

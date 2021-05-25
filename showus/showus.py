@@ -2,9 +2,9 @@
 
 __all__ = ['load_train_meta', 'load_papers', 'load_sample_text', 'clean_training_text', 'shorten_sentences',
            'find_sublist', 'get_ner_classlabel', 'tag_sentence', 'get_ner_data', 'write_ner_json', 'load_ner_datasets',
-           'create_tokenizer', 'tokenize_and_align_labels', 'compute_metrics', 'create_knowledge_bank', 'literal_match',
-           'get_ner_inference_data', 'get_bert_dataset_labels', 'jaccard_similarity', 'filter_bert_labels',
-           'combine_matching_and_bert']
+           'create_tokenizer', 'tokenize_and_align_labels', 'jaccard_similarity', 'compute_metrics',
+           'get_ner_inference_data', 'ner_predict', 'get_bert_dataset_labels', 'filter_bert_labels',
+           'create_knowledge_bank', 'literal_match', 'combine_matching_and_bert']
 
 # Cell
 import os, shutil
@@ -183,10 +183,9 @@ def write_ner_json(ner_data, pth=Path('train_ner.json')):
             f.write('\n')
 
 # Cell
-def load_ner_datasets(train=None, valid=None):
-    datasets = load_dataset('json', data_files={'train': train, 'valid': valid})
+def load_ner_datasets(data_files=None):
+    datasets = load_dataset('json', data_files=data_files)
     classlabel = get_ner_classlabel()
-
     for split, dataset in datasets.items():
         dataset.features['ner_tags'].feature = classlabel
     return datasets
@@ -230,6 +229,14 @@ def tokenize_and_align_labels(examples, tokenizer=None, label_all_tokens=True):
     return tokenized_inputs
 
 # Cell
+def jaccard_similarity(s1, s2):
+    l1 = set(s1.split(" "))
+    l2 = set(s2.split(" "))
+    intersection = len(list(l1.intersection(l2)))
+    union = (len(l1) + len(l2)) - intersection
+    return float(intersection) / union
+
+# Cell
 def compute_metrics(p, metric=None, label_list=None):
     predictions, labels = p
     predictions = np.argmax(predictions, axis=2)
@@ -251,6 +258,138 @@ def compute_metrics(p, metric=None, label_list=None):
         "f1": results["overall_f1"],
         "accuracy": results["overall_accuracy"],
     }
+
+# Cell
+def get_ner_inference_data(papers, sample_submission, classlabel=None):
+    '''
+    Args:
+        papers (dict): Each list in this dictionary consists of the section of a paper.
+        sample_submission (pd.DataFrame): Competition 'sample_submission.csv'.
+    Returns:
+        test_rows (list): Each list in this list is of the form:
+             [('goat', 0), ('win', 0), ...] and represents a sentence.
+        paper_length (list): Number of sentences in each paper.
+    '''
+    test_rows = [] # test data in NER format
+    paper_length = [] # store the number of sentences each paper has
+
+    for paper_id in sample_submission['Id']:
+        # load paper
+        paper = papers[paper_id]
+
+        # extract sentences
+        sentences = [clean_training_text(sentence) for section in paper
+                     for sentence in section['text'].split('.')
+                    ]
+        sentences = shorten_sentences(sentences) # make sentences short
+        sentences = [sentence for sentence in sentences if len(sentence) > 10] # only accept sentences with length > 10 chars
+        sentences = [sentence for sentence in sentences if any(word in sentence.lower() for word in ['data', 'study'])]
+
+        # collect all sentences in json
+        for sentence in sentences:
+            sentence_words = sentence.split()
+            dummy_tags = [classlabel.str2int('O')]*len(sentence_words)
+            test_rows.append(list(zip(sentence_words, dummy_tags)))
+#             test_rows.append({'tokens' : sentence_words, 'ner_tags' : dummy_tags})
+
+        # track which sentence belongs to which data point
+        paper_length.append(len(sentences))
+
+    print(f'total number of sentences: {len(test_rows)}')
+    return test_rows, paper_length
+
+# Cell
+def ner_predict(test_rows, tokenizer=None, model=None, metric=None):
+    classlabel = get_ner_classlabel()
+
+    write_ner_json(test_rows, pth='test_ner.json')
+    datasets = load_ner_datasets(data_files={'test':'test_ner.json'})
+    print('Tokenizing testset...')
+    tokenized_datasets = datasets.map(
+        partial(tokenize_and_align_labels,tokenizer=tokenizer, label_all_tokens=True),
+        batched=True)
+
+    print('Creating data collator...')
+    data_collator = DataCollatorForTokenClassification(tokenizer)
+    print('Creating (dummy) training arguments...')
+    args = TrainingArguments(output_dir='test_ner', num_train_epochs=3,
+                             learning_rate=2e-5, weight_decay=0.01,
+                             per_device_train_batch_size=16, per_device_eval_batch_size=16,
+                             evaluation_strategy='epoch', logging_steps=4, report_to='none',
+                             save_strategy='epoch', save_total_limit=6)
+
+    print('Creating trainer...')
+    trainer = Trainer(model=model, args=args,
+                      train_dataset=tokenized_datasets['test'], eval_dataset=tokenized_datasets['test'],
+                      data_collator=data_collator, tokenizer=tokenizer,
+                      compute_metrics=partial(compute_metrics, metric=metric, label_list=classlabel.names))
+
+    print('Predicting on test samples...')
+    predictions, label_ids, _ = trainer.predict(tokenized_datasets['test'])
+    predictions = predictions.argmax(axis=2)
+    true_predictions = [
+        [p for p, i in zip(prediction, label_id) if i != -100]
+        for prediction, label_id in zip(predictions, label_ids)]
+
+    return true_predictions
+
+# Cell
+def get_bert_dataset_labels(test_rows, paper_length, bert_outputs, classlabel=None):
+    '''
+    Returns:
+        bert_dataset_labels (list): Each element is a set consisting of labels predicted
+            by the model.
+    '''
+    test_sentences = [list(zip(*row))[0] for row in test_rows]
+#     test_sentences = [row['tokens'] for row in test_rows]
+
+    bert_dataset_labels = [] # store all dataset labels for each publication
+
+    for length in paper_length:
+        labels = set()
+        for sentence, pred in zip(test_sentences[:length], bert_outputs[:length]):
+            curr_phrase = ''
+            for word, tag in zip(sentence, pred):
+                if tag == classlabel.str2int('B'): # start a new phrase
+                    if curr_phrase:
+                        labels.add(curr_phrase)
+                        curr_phrase = ''
+                    curr_phrase = word
+                elif tag == classlabel.str2int('I') and curr_phrase: # continue the phrase
+                    curr_phrase += ' ' + word
+                else: # end last phrase (if any)
+                    if curr_phrase:
+                        labels.add(curr_phrase)
+                        curr_phrase = ''
+            # check if the label is the suffix of the sentence
+            if curr_phrase:
+                labels.add(curr_phrase)
+                curr_phrase = ''
+
+        # record dataset labels for this publication
+        bert_dataset_labels.append(labels)
+
+        del test_sentences[:length], bert_outputs[:length]
+
+    return bert_dataset_labels
+
+# Cell
+def filter_bert_labels(bert_dataset_labels):
+    '''
+    When several labels for a paper are too similar, keep just one of them.
+    '''
+    filtered_bert_labels = []
+
+    for labels in bert_dataset_labels:
+        filtered = []
+
+        for label in sorted(labels, key=len):
+            label = clean_training_text(label, lower=True)
+            if len(filtered) == 0 or all(jaccard_similarity(label, got_label) < 0.75 for got_label in filtered):
+                filtered.append(label)
+
+        filtered_bert_labels.append('|'.join(filtered))
+    return filtered_bert_labels
 
 # Cell
 def create_knowledge_bank(pth):
@@ -286,111 +425,12 @@ def literal_match(paper, all_labels):
     return labels
 
 # Cell
-def get_ner_inference_data(papers, sample_submission):
-    '''
-    Args:
-        papers (dict): Each list in this dictionary consists of the section of a paper.
-        sample_submission (pd.DataFrame): Competition 'sample_submission.csv'.
-    Returns:
-        test_rows (list): Each dict in this list is of the form:
-            {'tokens': ['goat', 'win', ...], 'tags': ['O', 'O', ...]}
-            and represents a sentence.
-        paper_length (list): Number of sentences in each paper.
-    '''
-    test_rows = [] # test data in NER format
-    paper_length = [] # store the number of sentences each paper has
-
-    for paper_id in sample_submission['Id']:
-        # load paper
-        paper = papers[paper_id]
-
-        # extract sentences
-        sentences = [clean_training_text(sentence) for section in paper
-                     for sentence in section['text'].split('.')
-                    ]
-        sentences = shorten_sentences(sentences) # make sentences short
-        sentences = [sentence for sentence in sentences if len(sentence) > 10] # only accept sentences with length > 10 chars
-        sentences = [sentence for sentence in sentences if any(word in sentence.lower() for word in ['data', 'study'])]
-
-        # collect all sentences in json
-        for sentence in sentences:
-            sentence_words = sentence.split()
-            dummy_tags = ['O']*len(sentence_words)
-            test_rows.append({'tokens' : sentence_words, 'tags' : dummy_tags})
-
-        # track which sentence belongs to which data point
-        paper_length.append(len(sentences))
-
-    print(f'total number of sentences: {len(test_rows)}')
-    return test_rows, paper_length
-
-# Cell
-def get_bert_dataset_labels(test_rows, paper_length, bert_outputs):
-    '''
-    Returns:
-        bert_dataset_labels (list): Each element is a set consisting of labels predicted
-            by the model.
-    '''
-    test_sentences = [row['tokens'] for row in test_rows]
-
-    bert_dataset_labels = [] # store all dataset labels for each publication
-
-    for length in paper_length:
-        labels = set()
-        for sentence, pred in zip(test_sentences[:length], bert_outputs[:length]):
-            curr_phrase = ''
-            for word, tag in zip(sentence, pred):
-                if tag == 'B': # start a new phrase
-                    if curr_phrase:
-                        labels.add(curr_phrase)
-                        curr_phrase = ''
-                    curr_phrase = word
-                elif tag == 'I' and curr_phrase: # continue the phrase
-                    curr_phrase += ' ' + word
-                else: # end last phrase (if any)
-                    if curr_phrase:
-                        labels.add(curr_phrase)
-                        curr_phrase = ''
-            # check if the label is the suffix of the sentence
-            if curr_phrase:
-                labels.add(curr_phrase)
-                curr_phrase = ''
-
-        # record dataset labels for this publication
-        bert_dataset_labels.append(labels)
-
-        del test_sentences[:length], bert_outputs[:length]
-
-    return bert_dataset_labels
-
-# Cell
-def jaccard_similarity(s1, s2):
-    l1 = set(s1.split(" "))
-    l2 = set(s2.split(" "))
-    intersection = len(list(l1.intersection(l2)))
-    union = (len(l1) + len(l2)) - intersection
-    return float(intersection) / union
-
-# Cell
-def filter_bert_labels(bert_dataset_labels):
-    '''
-    When several labels for a paper are too similar, keep just one of them.
-    '''
-    filtered_bert_labels = []
-
-    for labels in bert_dataset_labels:
-        filtered = []
-
-        for label in sorted(labels, key=len):
-            label = clean_training_text(label, lower=True)
-            if len(filtered) == 0 or all(jaccard_similarity(label, got_label) < 0.75 for got_label in filtered):
-                filtered.append(label)
-
-        filtered_bert_labels.append('|'.join(filtered))
-    return filtered_bert_labels
-
-# Cell
 def combine_matching_and_bert(literal_preds, filtererd_bert_labels):
+    '''
+    For a given sentence, if there's a literal match, use that as the final
+    prediction for the sentence.  If there isn't a literal match,
+    use what the model predicts.
+    '''
     final_predictions = []
     for literal_match, bert_pred in zip(literal_preds, filtered_bert_labels):
         if literal_match:

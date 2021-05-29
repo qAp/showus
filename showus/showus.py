@@ -142,8 +142,8 @@ def extract_sentences(paper, sentence_definition='sentence'):
     return sentences
 
 # Cell
-def get_paper_ner_data(paper, labels, sentence_definition='sentence',
-                       max_length=64, overlap=20):
+def get_paper_ner_data(paper, labels, classlabel=None,
+                       sentence_definition='sentence', max_length=64, overlap=20):
     '''
     Get NER data for a paper.
     '''
@@ -181,7 +181,8 @@ def get_ner_data(papers, df=None, classlabel=None, shuffle=True,
         labels = dataset_label.split('|')
 
         cnt_pos_, cnt_neg_, ner_data_ = get_paper_ner_data(
-            paper, labels, sentence_definition=sentence_definition, max_length=max_length, overlap=overlap)
+            paper, labels, classlabel=classlabel,
+            sentence_definition=sentence_definition, max_length=max_length, overlap=overlap)
         cnt_pos += cnt_pos_
         cnt_neg += cnt_neg_
         ner_data.extend(ner_data_)

@@ -281,7 +281,8 @@ def compute_metrics(p, metric=None, label_list=None):
     }
 
 # Cell
-def get_ner_inference_data(papers, sample_submission, classlabel=None):
+def get_ner_inference_data(papers, sample_submission, classlabel=None,
+                           sentence_definition='sentence', max_length=64, overlap=20):
     '''
     Args:
         papers (dict): Each list in this dictionary consists of the section of a paper.
@@ -291,28 +292,22 @@ def get_ner_inference_data(papers, sample_submission, classlabel=None):
              [('goat', 0), ('win', 0), ...] and represents a sentence.
         paper_length (list): Number of sentences in each paper.
     '''
-    test_rows = [] # test data in NER format
-    paper_length = [] # store the number of sentences each paper has
+    test_rows = []
+    paper_length = []
 
     for paper_id in sample_submission['Id']:
-        # load paper
         paper = papers[paper_id]
 
-        # extract sentences
-        sentences = [clean_training_text(sentence) for section in paper
-                     for sentence in section['text'].split('.')
-                    ]
-        sentences = shorten_sentences(sentences) # make sentences short
-        sentences = [sentence for sentence in sentences if len(sentence) > 10] # only accept sentences with length > 10 chars
+        sentences = extract_sentences(paper, sentence_definition=sentence_definition)
+        sentences = shorten_sentences(sentences, max_length=max_length, overlap=overlap)
+        sentences = [sentence for sentence in sentences if len(sentence) > 10]
         sentences = [sentence for sentence in sentences if any(word in sentence.lower() for word in ['data', 'study'])]
 
-        # collect all sentences in json
         for sentence in sentences:
             sentence_words = sentence.split()
             dummy_tags = [classlabel.str2int('O')]*len(sentence_words)
             test_rows.append(list(zip(sentence_words, dummy_tags)))
 
-        # track which sentence belongs to which data point
         paper_length.append(len(sentences))
 
     print(f'total number of sentences: {len(test_rows)}')

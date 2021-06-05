@@ -403,7 +403,7 @@ def ner_predict(pth=None, tokenizer=None, model=None, metric=None):
 
 # Cell
 
-def batched_ner_predict(pth, tokenizer=None, model=model, metric=metric,
+def batched_ner_predict(pth, tokenizer=None, model=None, metric=None,
                         batch_size=16):
     '''
     Do inference on dataset in batches.

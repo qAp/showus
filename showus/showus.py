@@ -4,8 +4,8 @@ __all__ = ['load_train_meta', 'load_papers', 'load_sample_text', 'clean_training
            'find_sublist', 'get_ner_classlabel', 'tag_sentence', 'extract_sentences', 'get_paper_ner_data',
            'get_ner_data', 'write_ner_json', 'load_ner_datasets', 'create_tokenizer', 'tokenize_and_align_labels',
            'jaccard_similarity', 'remove_nonoriginal_outputs', 'compute_metrics', 'get_ner_inference_data',
-           'ner_predict', 'get_paper_dataset_labels', 'filter_dataset_labels', 'create_knowledge_bank', 'literal_match',
-           'combine_matching_and_model']
+           'ner_predict', 'batched_ner_predict', 'get_paper_dataset_labels', 'filter_dataset_labels',
+           'create_knowledge_bank', 'literal_match', 'combine_matching_and_model']
 
 # Cell
 import os, shutil
@@ -24,6 +24,8 @@ from transformers import AutoTokenizer, DataCollatorForTokenClassification
 from transformers import AutoModelForTokenClassification
 from transformers import TrainingArguments, Trainer
 from datasets import load_dataset, ClassLabel, load_metric
+
+import matplotlib.pyplot as plt
 
 # Cell
 Path.ls = lambda pth: list(pth.iterdir())
@@ -397,6 +399,27 @@ def ner_predict(pth=None, tokenizer=None, model=None, metric=None):
     predictions = predictions.argmax(axis=2)
     predictions = remove_nonoriginal_outputs(predictions, word_ids)
     label_ids   = remove_nonoriginal_outputs(label_ids, word_ids)
+    return predictions, label_ids
+
+# Cell
+
+def batched_ner_predict(pth, tokenizer=None, model=model, metric=metric,
+                        batch_size=16):
+    '''
+    Do inference on dataset in batches.
+    '''
+    lines = open(pth, mode='r').readlines()
+
+    pth_tmp = 'ner_predict_tmp.json'
+    predictions, label_ids = [], []
+    for ib in range(0, len(lines), batch_size):
+        with open(pth_tmp, mode='w') as f:
+            f.writelines(lines[ ib: ib + batch_size ])
+
+        predictions_, label_ids_ = ner_predict(
+            pth_tmp, tokenizer=tokenizer, model=model, metric=metric)
+        predictions.extend(predictions_)
+        label_ids.extend(label_ids_)
     return predictions, label_ids
 
 # Cell

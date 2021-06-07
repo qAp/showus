@@ -8,7 +8,7 @@ __all__ = ['load_train_meta', 'load_papers', 'load_sample_text', 'clean_training
            'create_knowledge_bank', 'literal_match', 'combine_matching_and_model']
 
 # Cell
-import os, shutil
+import os, shutil, time
 from tqdm import tqdm
 from pathlib import Path
 import itertools
@@ -372,10 +372,13 @@ def get_ner_inference_data(papers, sample_submission, classlabel=None,
 def ner_predict(pth=None, tokenizer=None, model=None, metric=None):
     classlabel = get_ner_classlabel()
     datasets = load_ner_datasets(data_files={'test':pth})
-    print('Tokenizing testset...')
+
+    print('Tokenizing testset...', end='')
+    t0 = time.time()
     tokenized_datasets = datasets.map(
         partial(tokenize_and_align_labels,tokenizer=tokenizer, label_all_tokens=True),
         batched=True)
+    print(f'completed in {(time.time() - t0) / 60:.2f} mins.')
 
     print('Creating data collator...')
     data_collator = DataCollatorForTokenClassification(tokenizer)
@@ -395,10 +398,20 @@ def ner_predict(pth=None, tokenizer=None, model=None, metric=None):
                       data_collator=data_collator, tokenizer=tokenizer, compute_metrics=compute_metrics_)
 
     print('Predicting on test samples...')
+    t0 = time.time()
     predictions, label_ids, _ = trainer.predict(tokenized_datasets['test'])
+    print(f'completed in {(time.time() - t0) / 60:.2f} mins.')
+    print('Argmaxing...')
+    t0 = time.time()
     predictions = predictions.argmax(axis=2)
+    print(f'completed in {(time.time() - t0) / 60:.2f} mins.')
+
+    print('Removing non-original outputs...', end='')
+    t0 = time.time()
     predictions = remove_nonoriginal_outputs(predictions, word_ids)
     label_ids   = remove_nonoriginal_outputs(label_ids, word_ids)
+    print(f'completed in {(time.time() - t0) / 60:.2f} mins.')
+
     return predictions, label_ids
 
 # Cell

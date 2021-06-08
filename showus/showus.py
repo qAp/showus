@@ -336,7 +336,8 @@ def compute_metrics(p, metric=None, word_ids=None, label_list=None):
 
 # Cell
 def get_ner_inference_data(papers, sample_submission, classlabel=None,
-                           sentence_definition='sentence', max_length=64, overlap=20):
+                           sentence_definition='sentence', max_length=64, overlap=20,
+                           min_length=10, contains_keywords=['data', 'study']):
     '''
     Args:
         papers (dict): Each list in this dictionary consists of the section of a paper.
@@ -354,9 +355,13 @@ def get_ner_inference_data(papers, sample_submission, classlabel=None,
 
         sentences = extract_sentences(paper, sentence_definition=sentence_definition)
         sentences = shorten_sentences(sentences, max_length=max_length, overlap=overlap)
-        sentences = [sentence for sentence in sentences if len(sentence) > 10]
-        sentences = [sentence for sentence in sentences
-                     if any(word in sentence.lower() for word in ['data', 'study'])]
+
+        if min_length > 0:
+            sentences = [sentence for sentence in sentences if len(sentence) > min_length]
+
+        if contains_keywords is not None:
+            sentences = [sentence for sentence in sentences
+                         if any(word in sentence.lower() for word in contains_keywords)]
 
         for sentence in sentences:
             sentence_words = sentence.split()

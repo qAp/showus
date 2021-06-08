@@ -4,8 +4,8 @@ __all__ = ['load_train_meta', 'load_papers', 'load_sample_text', 'clean_training
            'find_sublist', 'get_ner_classlabel', 'tag_sentence', 'extract_sentences', 'get_paper_ner_data',
            'get_ner_data', 'write_ner_json', 'load_ner_datasets', 'create_tokenizer', 'tokenize_and_align_labels',
            'jaccard_similarity', 'remove_nonoriginal_outputs', 'compute_metrics', 'get_ner_inference_data',
-           'ner_predict', 'batched_ner_predict', 'get_paper_dataset_labels', 'filter_dataset_labels',
-           'create_knowledge_bank', 'literal_match', 'combine_matching_and_model']
+           'ner_predict', 'batched_ner_predict', 'get_paper_dataset_labels', 'create_knowledge_bank', 'literal_match',
+           'combine_matching_and_model', 'filter_dataset_labels']
 
 # Cell
 import os, shutil, time
@@ -479,24 +479,6 @@ def get_paper_dataset_labels(pth, paper_length, predictions):
     return paper_dataset_labels
 
 # Cell
-def filter_dataset_labels(paper_dataset_labels):
-    '''
-    When several labels for a paper are too similar, keep just one of them.
-    '''
-    filtered_dataset_labels = []
-
-    for labels in paper_dataset_labels:
-        filtered = []
-
-        for label in sorted(labels, key=len):
-            label = clean_training_text(label, lower=True)
-            if len(filtered) == 0 or all(jaccard_similarity(label, got_label) < 0.75 for got_label in filtered):
-                filtered.append(label)
-
-        filtered_dataset_labels.append('|'.join(filtered))
-    return filtered_dataset_labels
-
-# Cell
 def create_knowledge_bank(pth):
     '''
     Args:
@@ -530,16 +512,49 @@ def literal_match(paper, all_labels):
     return labels
 
 # Cell
-def combine_matching_and_model(literal_preds, filtererd_dataset_labels):
+def combine_matching_and_model(literal_preds, paper_dataset_labels):
     '''
-    For a given sentence, if there's a literal match, use that as the final
-    prediction for the sentence.  If there isn't a literal match,
-    use what the model predicts.
+    Args:
+        literal_preds (list): Each element is a set, containing predicted labels for a paper
+            using literal matching.
+        paper_dataset_labels (list): Each element is a set, containing predicted labels for
+            a paper using trained model.
+    Returns:
+        filtered_dataset_labels (list): Each element is a string, containing
+            labels seperated by '|'.
+
+    Notes:
+        Combine literal matching predictions and model predictions.
+        Literal match predictions are appended IN FRONT of the model predictions,
+        because literal matches will be kept when removing labels that are too
+        similar to each other.
     '''
-    final_predictions = []
-    for literal_match, model_pred in zip(literal_preds, filtered_dataset_labels):
-        if literal_match:
-            final_predictions.append(literal_match)
-        else:
-            final_predictions.append(model_pred)
-    return final_predictions
+    all_labels = [list(literal_match) + list(model_pred)
+                  for literal_match, model_pred in zip(literal_preds, paper_dataset_labels)]
+    return all_labels
+
+# Cell
+def filter_dataset_labels(all_labels):
+    '''
+    When several labels for a paper are too similar, keep just one of them,
+    the one that appears FIRST.
+
+    Args:
+        all_labels (list, set): Each element is a list of labels (str).
+
+    Returns:
+        filtered_dataset_labels (list): Each element is a string, containing
+            labels seperated by '|'.
+    '''
+    filtered_dataset_labels = []
+
+    for labels in all_labels:
+        filtered = []
+
+        for label in labels:
+            label = clean_training_text(label, lower=True)
+            if len(filtered) == 0 or all(jaccard_similarity(label, got_label) < 0.75 for got_label in filtered):
+                filtered.append(label)
+
+        filtered_dataset_labels.append('|'.join(filtered))
+    return filtered_dataset_labels

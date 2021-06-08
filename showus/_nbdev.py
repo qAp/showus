@@ -25,10 +25,10 @@ index = {"Path.ls": "showus.ipynb",
          "ner_predict": "showus.ipynb",
          "batched_ner_predict": "showus.ipynb",
          "get_paper_dataset_labels": "showus.ipynb",
-         "filter_dataset_labels": "showus.ipynb",
          "create_knowledge_bank": "showus.ipynb",
          "literal_match": "showus.ipynb",
-         "combine_matching_and_model": "showus.ipynb"}
+         "combine_matching_and_model": "showus.ipynb",
+         "filter_dataset_labels": "showus.ipynb"}
 
 modules = ["showus.py"]
 

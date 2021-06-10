@@ -374,7 +374,8 @@ def get_ner_inference_data(papers, sample_submission, classlabel=None,
     return test_rows, paper_length
 
 # Cell
-def ner_predict(pth=None, tokenizer=None, model=None, metric=None):
+def ner_predict(pth=None, tokenizer=None, model=None, metric=None,
+                per_device_train_batch_size=16, per_device_eval_batch_size=16):
     classlabel = get_ner_classlabel()
     datasets = load_ner_datasets(data_files={'test':pth})
 
@@ -391,7 +392,8 @@ def ner_predict(pth=None, tokenizer=None, model=None, metric=None):
     print('Creating (dummy) training arguments...')
     args = TrainingArguments(output_dir='test_ner', num_train_epochs=3,
                              learning_rate=2e-5, weight_decay=0.01,
-                             per_device_train_batch_size=16, per_device_eval_batch_size=16,
+                             per_device_train_batch_size=per_device_train_batch_size,
+                             per_device_eval_batch_size=per_device_eval_batch_size,
                              evaluation_strategy='epoch', logging_steps=4, report_to='none',
                              save_strategy='epoch', save_total_limit=6)
 
@@ -422,7 +424,8 @@ def ner_predict(pth=None, tokenizer=None, model=None, metric=None):
 # Cell
 
 def batched_ner_predict(pth, tokenizer=None, model=None, metric=None,
-                        batch_size=16):
+                        batch_size=64_000,
+                        per_device_train_batch_size=16, per_device_eval_batch_size=16):
     '''
     Do inference on dataset in batches.
     '''
@@ -435,7 +438,9 @@ def batched_ner_predict(pth, tokenizer=None, model=None, metric=None,
             f.writelines(lines[ ib: ib + batch_size ])
 
         predictions_, label_ids_ = ner_predict(
-            pth_tmp, tokenizer=tokenizer, model=model, metric=metric)
+            pth_tmp, tokenizer=tokenizer, model=model, metric=metric,
+            per_device_train_batch_size=per_device_train_batch_size,
+            per_device_eval_batch_size=per_device_eval_batch_size)
         predictions.extend(predictions_)
         label_ids.extend(label_ids_)
     return predictions, label_ids

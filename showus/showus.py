@@ -146,7 +146,8 @@ def extract_sentences(paper, sentence_definition='sentence'):
 
 # Cell
 def get_paper_ner_data(paper, labels, classlabel=None,
-                       sentence_definition='sentence', max_length=64, overlap=20):
+                       sentence_definition='sentence', max_length=64, overlap=20,
+                       neg_keywords=['data', 'study']):
     '''
     Get NER data for a single paper.
     '''
@@ -161,14 +162,20 @@ def get_paper_ner_data(paper, labels, classlabel=None,
         if is_positive:
             cnt_pos += 1
             ner_data.append(tags)
-        elif any(word in sentence.lower() for word in ['data', 'study']):
+        elif neg_keywords:
+            if any(word in sentence.lower() for word in neg_keywords):
+                ner_data.append(tags)
+                cnt_neg += 1
+        else:
             ner_data.append(tags)
             cnt_neg += 1
+
     return cnt_pos, cnt_neg, ner_data
 
 # Cell
 def get_ner_data(papers, df=None, classlabel=None, shuffle=True,
-                 sentence_definition='sentence', max_length=64, overlap=20):
+                 sentence_definition='sentence', max_length=64, overlap=20,
+                 neg_keywords=['study', 'data']):
     '''
     Get NER data for a list of papers.
 
@@ -194,7 +201,8 @@ def get_ner_data(papers, df=None, classlabel=None, shuffle=True,
 
         cnt_pos_, cnt_neg_, ner_data_ = get_paper_ner_data(
             paper, labels, classlabel=classlabel,
-            sentence_definition=sentence_definition, max_length=max_length, overlap=overlap)
+            sentence_definition=sentence_definition, max_length=max_length, overlap=overlap,
+            neg_keywords=neg_keywords)
         cnt_pos += cnt_pos_
         cnt_neg += cnt_neg_
         ner_data.extend(ner_data_)
@@ -319,9 +327,6 @@ def compute_metrics(p, metric=None, word_ids=None, label_list=None):
 
     true_predictions = remove_nonoriginal_outputs(predictions, word_ids)
     true_label_ids = remove_nonoriginal_outputs(label_ids, word_ids)
-#     true_predictions = [[p for p, l, in zip(pred, label) if l != -100]
-#                         for pred, label in zip(predictions, label_ids)]
-#     true_label_ids   = [[l for l in label if l != -100] for label in label_ids]
 
     true_predictions = [[label_list[p] for p in pred] for pred in true_predictions]
     true_labels = [[label_list[i] for i in label_id] for label_id in true_label_ids]

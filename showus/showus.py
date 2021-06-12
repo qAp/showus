@@ -2,10 +2,10 @@
 
 __all__ = ['load_train_meta', 'load_papers', 'load_sample_text', 'clean_training_text', 'shorten_sentences',
            'find_sublist', 'get_ner_classlabel', 'tag_sentence', 'extract_sentences', 'get_paper_ner_data',
-           'get_ner_data', 'write_ner_json', 'load_ner_datasets', 'create_tokenizer', 'tokenize_and_align_labels',
-           'jaccard_similarity', 'remove_nonoriginal_outputs', 'compute_metrics', 'get_ner_inference_data',
-           'ner_predict', 'batched_ner_predict', 'get_paper_dataset_labels', 'create_knowledge_bank', 'literal_match',
-           'combine_matching_and_model', 'filter_dataset_labels']
+           'get_ner_data', 'write_ner_json', 'load_ner_datasets', 'batched_write_ner_json', 'create_tokenizer',
+           'tokenize_and_align_labels', 'jaccard_similarity', 'remove_nonoriginal_outputs', 'compute_metrics',
+           'get_ner_inference_data', 'ner_predict', 'batched_ner_predict', 'get_paper_dataset_labels',
+           'create_knowledge_bank', 'literal_match', 'combine_matching_and_model', 'filter_dataset_labels']
 
 # Cell
 import os, shutil, time
@@ -215,11 +215,11 @@ def get_ner_data(papers, df=None, classlabel=None, shuffle=True,
     return cnt_pos, cnt_neg, ner_data
 
 # Cell
-def write_ner_json(ner_data, pth=Path('train_ner.json')):
+def write_ner_json(ner_data, pth=Path('train_ner.json'), mode='w'):
     '''
     Save NER data to json file.
     '''
-    with open(pth, 'w') as f:
+    with open(pth, mode=mode) as f:
         for row in ner_data:
             words, nes = list(zip(*row))
             row_json = {'tokens' : words, 'ner_tags' : nes}
@@ -237,6 +237,24 @@ def load_ner_datasets(data_files=None):
     for split, dataset in datasets.items():
         dataset.features['ner_tags'].feature = classlabel
     return datasets
+
+# Cell
+
+def batched_write_ner_json(papers, df, pth=Path('train_ner.json'), batch_size=4_000,
+                           classlabel=get_ner_classlabel(),
+                           sentence_definition='sentence', max_length=64, overlap=20,
+                           neg_keywords=['study', 'data']):
+
+    for i in range(0, len(df), batch_size):
+        print(f'Batch {i // batch_size}...', end='')
+        t0 = time.time()
+        cnt_pos, cnt_neg, ner_data = get_ner_data(papers, df.iloc[i:i+batch_size],
+                                                  classlabel=classlabel,
+                                                  sentence_definition=sentence_definition,
+                                                  max_length=max_length, overlap=overlap,
+                                                  neg_keywords=neg_keywords)
+        write_ner_json(ner_data, pth=pth, mode='w' if i == 0 else 'a')
+        print(f'done in {(time.time() - t0) / 60} mins.')
 
 # Cell
 def create_tokenizer(model_checkpoint='distilbert-base-cased'):

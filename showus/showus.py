@@ -567,7 +567,7 @@ def combine_matching_and_model(literal_preds, paper_dataset_labels):
     return all_labels
 
 # Cell
-def filter_dataset_labels(all_labels):
+def filter_dataset_labels(all_labels, max_similarity=0.75):
     '''
     When several labels for a paper are too similar, keep just one of them,
     the one that appears FIRST.
@@ -586,7 +586,8 @@ def filter_dataset_labels(all_labels):
 
         for label in labels:
             label = clean_training_text(label, lower=True)
-            if len(filtered) == 0 or all(jaccard_similarity(label, got_label) < 0.75 for got_label in filtered):
+            if len(filtered) == 0 or all(jaccard_similarity(label, got_label) < max_similarity
+                                         for got_label in filtered):
                 filtered.append(label)
 
         filtered_dataset_labels.append('|'.join(filtered))

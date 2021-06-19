@@ -207,7 +207,7 @@ def tag_sentence(sentence, labels, classlabel=None):
 def get_paper_ner_data(paper, labels, mark_title=False, mark_text=False,
                        pretokenizer=BertPreTokenizer(), classlabel=None,
                        sentence_definition='sentence', max_length=64, overlap=20,
-                       neg_keywords=['data', 'study']):
+                       neg_keywords=['data', 'study'], neg_sample_prob=None):
     '''
     Get NER data for a single paper.
 
@@ -235,6 +235,10 @@ def get_paper_ner_data(paper, labels, mark_title=False, mark_text=False,
             ner_data.append(tags)
         elif neg_keywords:
             if any(keyword in ' '.join(word.lower() for word in sentence) for keyword in neg_keywords):
+                ner_data.append(tags)
+                cnt_neg += 1
+        elif neg_sample_prob is not None:
+            if np.random.rand() < neg_sample_prob:
                 ner_data.append(tags)
                 cnt_neg += 1
         else:

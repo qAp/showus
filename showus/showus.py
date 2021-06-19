@@ -333,9 +333,13 @@ def batched_write_ner_json(papers, df, pth=Path('train_ner.json'), batch_size=4_
 
 # Cell
 def create_tokenizer(model_checkpoint='distilbert-base-cased'):
+
     tokenizer = AutoTokenizer.from_pretrained(
         model_checkpoint,
         additional_special_tokens=[AAAsTITLE, ZZZsTITLE, AAAsTEXT, ZZZsTEXT])
+
+    if model_checkpoint == 'roberta-base':
+        tokenizer.add_prefix_space = True
 
     assert isinstance(tokenizer, transformers.PreTrainedTokenizerFast)
 

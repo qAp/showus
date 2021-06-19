@@ -251,7 +251,8 @@ def get_paper_ner_data(paper, labels, mark_title=False, mark_text=False,
 def get_ner_data(papers, df=None, mark_title=False, mark_text=False,
                  classlabel=None, pretokenizer=BertPreTokenizer(),
                  sentence_definition='sentence', max_length=64, overlap=20,
-                 neg_keywords=['study', 'data'], shuffle=True):
+                 neg_keywords=['study', 'data'], neg_sample_prob=None,
+                 shuffle=True):
     '''
     Get NER data for a list of papers.
 
@@ -279,7 +280,7 @@ def get_ner_data(papers, df=None, mark_title=False, mark_text=False,
             paper, labels, mark_title=mark_title, mark_text=mark_text,
             classlabel=classlabel, pretokenizer=pretokenizer,
             sentence_definition=sentence_definition, max_length=max_length, overlap=overlap,
-            neg_keywords=neg_keywords)
+            neg_keywords=neg_keywords, neg_sample_prob=neg_sample_prob)
         cnt_pos += cnt_pos_
         cnt_neg += cnt_neg_
         ner_data.extend(ner_data_)
@@ -321,17 +322,17 @@ def batched_write_ner_json(papers, df, pth=Path('train_ner.json'), batch_size=4_
                            mark_title=False, mark_text=False,
                            classlabel=get_ner_classlabel(), pretokenizer=BertPreTokenizer(),
                            sentence_definition='sentence', max_length=64, overlap=20,
-                           neg_keywords=['study', 'data']):
+                           neg_keywords=['study', 'data'], neg_sample_prob=None):
 
     for i in range(0, len(df), batch_size):
         print(f'Batch {i // batch_size}...', end='')
         t0 = time.time()
-        cnt_pos, cnt_neg, ner_data = get_ner_data(papers, df.iloc[i:i+batch_size],
-                                                  mark_title=mark_title, mark_text=mark_text,
-                                                  classlabel=classlabel, pretokenizer=pretokenizer,
-                                                  sentence_definition=sentence_definition,
-                                                  max_length=max_length, overlap=overlap,
-                                                  neg_keywords=neg_keywords)
+        cnt_pos, cnt_neg, ner_data = get_ner_data(
+            papers, df.iloc[i:i+batch_size],
+            mark_title=mark_title, mark_text=mark_text,
+            classlabel=classlabel, pretokenizer=pretokenizer,
+            sentence_definition=sentence_definition, max_length=max_length, overlap=overlap,
+            neg_keywords=neg_keywords, neg_sample_prob=neg_sample_prob)
         write_ner_json(ner_data, pth=pth, mode='w' if i == 0 else 'a')
         print(f'done in {(time.time() - t0) / 60} mins.')
 

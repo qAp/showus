@@ -5,11 +5,11 @@ __all__ = ['load_train_meta', 'load_papers', 'AAAsTITLE', 'ZZZsTITLE', 'AAAsTEXT
            'get_ner_classlabel', 'tag_sentence', 'get_paper_ner_data', 'get_ner_data', 'write_ner_json',
            'load_ner_datasets', 'batched_write_ner_json', 'create_tokenizer', 'tokenize_and_align_labels',
            'remove_nonoriginal_outputs', 'jaccard_similarity', 'compute_metrics', 'get_ner_inference_data',
-           'ner_predict', 'batched_ner_predict', 'get_paper_dataset_labels', 'create_knowledge_bank', 'literal_match',
-           'combine_matching_and_model', 'filter_dataset_labels']
+           'batched_write_ner_inference_json', 'ner_predict', 'batched_ner_predict', 'get_paper_dataset_labels',
+           'create_knowledge_bank', 'literal_match', 'combine_matching_and_model', 'filter_dataset_labels']
 
 # Cell
-import os, shutil, time
+import os, sys, shutil, time
 from tqdm import tqdm
 from pathlib import Path
 import itertools
@@ -21,19 +21,32 @@ import numpy as np
 import pandas as pd
 import torch
 from tokenizers.pre_tokenizers import BertPreTokenizer
+from datasets import load_dataset, ClassLabel, load_metric
 import transformers, seqeval
 from transformers import AutoTokenizer, DataCollatorForTokenClassification
 from transformers import AutoModelForTokenClassification
 from transformers import TrainingArguments, Trainer
-from datasets import load_dataset, ClassLabel, load_metric
 
 import matplotlib.pyplot as plt
+from IPython.display import display
 
 # Cell
 Path.ls = lambda pth: list(pth.iterdir())
 
 # Cell
 def load_train_meta(pth, group_id=True):
+    '''
+    Load competition meta data.
+
+    Args:
+        pth (str, Path): Path to the provided 'train.csv'.
+        group_id (bool): If True, gather all labels for each paper into
+            the same row in output dataframe.
+
+    Returns:
+        df (pd.DataFrame): The meta data in competition 'train.csv'.  If
+            group_id is True, each paper has just one corresponding row.
+    '''
     df = pd.read_csv(pth)
     if group_id:
         df = df.groupby('Id').agg({'pub_title': 'first',
@@ -45,12 +58,17 @@ def load_train_meta(pth, group_id=True):
 # Cell
 def load_papers(dir_json, paper_ids):
     '''
-    Load papers into a dictionary.
+    Load the papers provided.
 
-    `papers`:
-        {''}
+    Args:
+        dir_json (str, Path): Path to the directory in which each
+            json file contains the text for a paper.
+        paper_ids (iter): IDs of the papers to load.
+
+    Returns:
+        papers (dict): Each key is a paper ID.  Each value is a list
+            containing the sections in the paper.
     '''
-
     papers = {}
     for paper_id in paper_ids:
         with open(f'{dir_json}/{paper_id}.json', 'r') as f:
@@ -70,6 +88,15 @@ ZZZsTEXT = 'ZZZsTEXT'    # End of section text
 
 def load_section(section, mark_title=False, mark_text=False):
     '''
+    Args:
+        section (dict): e.g. {'section_title': 'Method of Analysis',
+                              'text'         : 'For this study, ...'}
+        mark_title (bool): If True, will mark the start and end of
+            the section title with 'AAAsTITLE' and 'ZZZsTITLE', respectively.
+        mark_text (bool): If True, will mark the start and end of
+            the section text with 'AAAsTEXT' and 'ZZZsTEXT', respectively.
+    Returns:
+        out (str): Text of the section.
     '''
     title, text  = section['section_title'], section['text']
 
@@ -91,6 +118,9 @@ def load_section(section, mark_title=False, mark_text=False):
 
 
 def load_paper(paper, mark_title=False, mark_text=False):
+    '''
+    Load text for the paper.
+    '''
     sections = (load_section(section, mark_title, mark_text) for section in paper)
     return '\n\n'.join(sections)
 
@@ -100,6 +130,13 @@ def text2words(text, pretokenizer=BertPreTokenizer()):
     '''
     Pre-tokenizes a piece of text.  BertPreTokenizer tokenizes by space and
     punctuation.
+
+    Args:
+        text (str): Text to split into words by space and punctuations.
+        pretokenizer (tokenizers.pre_tokenizers.BertPreTokenizer):
+            Pre-tokenizer to use to split text into words.
+    Returns:
+        List of words in text.
     '''
     tokenized_text = pretokenizer.pre_tokenize_str(text)
     if tokenized_text:
@@ -205,7 +242,7 @@ def tag_sentence(sentence, labels, classlabel=None):
 # Cell
 
 def get_paper_ner_data(paper, labels, mark_title=False, mark_text=False,
-                       pretokenizer=BertPreTokenizer(), classlabel=None,
+                       pretokenizer=BertPreTokenizer(), classlabel=get_ner_classlabel(),
                        sentence_definition='sentence', max_length=64, overlap=20,
                        neg_keywords=['data', 'study'], neg_sample_prob=None):
     '''
@@ -214,6 +251,8 @@ def get_paper_ner_data(paper, labels, mark_title=False, mark_text=False,
     Args:
         paper (list): Each element is a dict of form {'section_title': "...", 'text': "..."}.
         labels (list): Each element is a string that is a dataset label.
+        neg_keywords (None, iter): Keywords which a negative sample needs to have.
+        neg_sample_prob (None, float): Probability with which to keep a negative sample.
 
     Returns:
         ner_data (list): Each element is a list of tuples of the form:
@@ -343,7 +382,9 @@ def create_tokenizer(model_checkpoint='distilbert-base-cased'):
         model_checkpoint,
         additional_special_tokens=[AAAsTITLE, ZZZsTITLE, AAAsTEXT, ZZZsTEXT])
 
-    if model_checkpoint == 'roberta-base':
+    try:
+        tokenizer(["This", "text", "is", "already", "split"], truncation=True, is_split_into_words=True)
+    except AssertionError:
         tokenizer.add_prefix_space = True
 
     assert isinstance(tokenizer, transformers.PreTrainedTokenizerFast)
@@ -498,6 +539,23 @@ def get_ner_inference_data(papers, sample_submission,
     return test_rows, paper_length
 
 # Cell
+
+def batched_write_ner_inference_json(papers, sample_submission,
+                                     pth='test_ner.json', batch_size=1_000, **kwargs):
+
+    paper_length = []
+
+    for i in range(0, len(sample_submission), batch_size):
+        test_rows, bpaper_length = get_ner_inference_data(
+            papers, sample_submission.iloc[i:i + batch_size], **kwargs)
+
+        write_ner_json(test_rows, pth, mode='w' if i==0 else 'a')
+        paper_length.extend(bpaper_length)
+
+    return paper_length
+
+# Cell
+
 def ner_predict(pth=None, tokenizer=None, model=None, metric=None,
                 per_device_train_batch_size=16, per_device_eval_batch_size=16):
     classlabel = get_ner_classlabel()
@@ -532,6 +590,7 @@ def ner_predict(pth=None, tokenizer=None, model=None, metric=None,
     t0 = time.time()
     predictions, label_ids, _ = trainer.predict(tokenized_datasets['test'])
     print(f'completed in {(time.time() - t0) / 60:.2f} mins.')
+
     print('Argmaxing...')
     t0 = time.time()
     predictions = predictions.argmax(axis=2)
@@ -653,6 +712,7 @@ def combine_matching_and_model(literal_preds, paper_dataset_labels):
             using literal matching.
         paper_dataset_labels (list): Each element is a set, containing predicted labels for
             a paper using trained model.
+
     Returns:
         filtered_dataset_labels (list): Each element is a string, containing
             labels seperated by '|'.

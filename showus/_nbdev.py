@@ -38,7 +38,7 @@ index = {"Path.ls": "showus.ipynb",
          "combine_matching_and_model": "showus.ipynb",
          "filter_dataset_labels": "showus.ipynb"}
 
-modules = ["showu.py"]
+modules = ["showus.py"]
 
 doc_url = "https://qAp.github.io/showus/"
 

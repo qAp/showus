@@ -42,6 +42,6 @@ modules = ["showus.py"]
 
 doc_url = "https://qAp.github.io/showus/"
 
-git_url = "https://github.com/qAp/showus/tree/{branch}/"
+git_url = "https://github.com/qAp/showus/tree/master/"
 
 def custom_doc_links(name): return None

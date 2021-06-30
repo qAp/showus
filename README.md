@@ -1,6 +1,6 @@
 # Showus
 
-A top 62% solution for the [Coleridge Initiative - Show US the Data Kaggle](https://www.kaggle.com/c/coleridgeinitiative-show-us-the-data)
+Solution for the Coleridge Initiative - Show US the Data Kaggle: https://www.kaggle.com/c/coleridgeinitiative-show-us-the-data
 
 ## General approach
 
